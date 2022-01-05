@@ -133,12 +133,12 @@ check_var_type <- function(x, y){
   Factors <- vapply(x, is.factor, TRUE)
   nLevels <- vapply(x, nlevels, 0L)
   
-  excessLevels <- nLevels > 32768
+  excessLevels <- nLevels > 2048
   excessLevelsIndex <- paste(which(excessLevels), collapse = ', ')
   excessLevelsVars <- paste(nms[which(excessLevels)], collapse = ', ')
   
   if(any(excessLevels)) {
-    stop("gbm does not currently handle categorical variables with more than 32768 levels. Variable ", excessLevelsIndex,": ", excessLevelsVars," has ", nLevels[which(excessLevels)]," levels.")
+    stop("gbm does not currently handle categorical variables with more than 2048 levels. Variable ", excessLevelsIndex,": ", excessLevelsVars," has ", nLevels[which(excessLevels)]," levels.")
     
   }
   
