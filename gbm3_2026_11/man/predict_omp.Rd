@@ -21,15 +21,17 @@ count. Zero returns \code{model$initF} for every row.}
 \item{n_threads}{One positive integer-valued thread count. The prediction
 team uses at most the number of rows (one thread for zero rows). An error
 is raised if the actual prediction team has fewer threads than requested
-after this cap. This does not change the global OpenMP thread setting.}
+after this cap. Dynamic team sizing is disabled for this call and restored
+afterward. The default OpenMP thread count is not changed. Hard runtime
+limits such as \code{OMP_THREAD_LIMIT} still apply.}
 }
 \value{
 A numeric vector of predictions, one per row of \code{newdata}.
 }
 \description{
 Predict from a prefix of the raw trees in a gbm3 Laplace regression fit,
-parallelizing independent rows with OpenMP. The package checks that a
-two-thread OpenMP team can be created when its namespace loads.
+parallelizing independent rows with OpenMP. Namespace loading does not
+create a thread team; each prediction requests its own team size.
 }
 \details{
 Predictions sum already-shrunken terminal values in native tree order,

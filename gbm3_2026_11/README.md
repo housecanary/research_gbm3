@@ -46,11 +46,15 @@ pak::local_install("/path/to/gbm3_2026_11")
 Installation configures and compiles the native code once; package loading does
 not use `sourceCpp()` or build code. Configuration uses `R CMD SHLIB` with the
 same C++11 compiler, site/user Makevars and flags as the package build, and
-requires a linked **shared** OpenMP runtime and an actual two-thread team. It
-fails rather than silently producing a serial build. Package loading also
-checks the two-thread capability. Do not set `OMP_THREAD_LIMIT` below two;
-`OMP_DYNAMIC` must also permit the requested two-thread team. Configuration does
-not disable dynamic teams behind the runtime's back.
+requires a linked **shared** OpenMP runtime, verified with a one-thread probe.
+It fails rather than silently producing a build without OpenMP. Package loading
+does not create a thread team, so single-thread containers can load gbm3.
+Each `predict_omp()` call requests its own `n_threads`, capped by row count,
+temporarily disables dynamic team sizing, and restores the caller's policy.
+Calls with 1, 4, then 2 threads are independent. Hard limits such as
+`OMP_THREAD_LIMIT=1` still prevent multi-thread predictions: these error rather
+than silently using fewer threads. Allocate sufficient CPUs for useful parallel
+execution; additional threads do not increase a container's CPU allocation.
 
 **Linux:** install R development tools, GNU make, binutils, GCC/G++ and the
 matching shared `libgomp` runtime (for example, `r-base-dev`, `build-essential`

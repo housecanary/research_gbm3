@@ -40,6 +40,42 @@ omp_test_errors <- function(cases) {
   }
 }
 
+test_that("fresh processes support per-call teams and single-thread limits", {
+  skip_if_not_installed("callr")
+  run <- function(limit) {
+    callr::r(
+      function(model, limit) {
+        library(gbm3)
+        data <- data.frame(x = rep(1, 8))
+        counts <- if (limit == 1L) c(1L, 4L, 2L, 1L) else c(1L, 4L, 2L)
+        lapply(counts, function(threads) {
+          tryCatch(
+            predict_omp(model, data, 1L, threads),
+            error = function(e) conditionMessage(e)
+          )
+        })
+      },
+      args = list(omp_test_model(), limit),
+      libpath = .libPaths(),
+      env = c(
+        OMP_THREAD_LIMIT = as.character(limit),
+        OMP_DYNAMIC = "TRUE",
+        OMP_NUM_THREADS = "1"
+      )
+    )
+  }
+  expect_identical(run(4L), rep(list(rep(13, 8)), 3))
+  expect_identical(
+    run(1L),
+    list(
+      rep(13, 8),
+      "OpenMP created 1 threads; requested 4",
+      "OpenMP created 1 threads; requested 2",
+      rep(13, 8)
+    )
+  )
+})
+
 test_that("predict_omp is exported with four mandatory arguments and two threads", {
   expect_identical(getExportedValue("gbm3", "predict_omp"), predict_omp)
   expect_identical(

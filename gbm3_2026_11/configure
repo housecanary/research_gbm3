@@ -45,7 +45,7 @@ cat > "$work/conftest.cpp" <<'EOF'
 // Exercise the unsigned loops, firstprivate objects and member expressions
 // used by the existing fitting code, as well as the prediction runtime API.
 struct Probe {
-    int threads() const { return 2; }
+    int threads() const { return 1; }
     int chunk() const { return 1; }
     int run() const {
         int team = 0;
@@ -103,9 +103,9 @@ probe() {
     if (cd "$work" && "$R" CMD SHLIB conftest.cpp) > "$work/build.log" 2>&1; then
         if shared_runtime; then
             if (cd "$work" && "$R" --vanilla --slave -e \
-                'ext <- .Platform$dynlib.ext; dyn.load(paste0("conftest", ext)); team <- .C("gbm3_openmp_probe", team = integer(1))$team; if (team != 2L) stop("OpenMP could not create a two-thread team (got ", team, ")")') \
+                'ext <- .Platform$dynlib.ext; dyn.load(paste0("conftest", ext)); team <- .C("gbm3_openmp_probe", team = integer(1))$team; if (team != 1L) stop("OpenMP runtime probe failed (got ", team, ")")') \
                 > "$work/run.log" 2>&1; then
-                printf 'yes (shared runtime, two threads)\n'
+                printf 'yes (shared runtime, one-thread probe)\n'
                 return 0
             fi
         fi
@@ -167,7 +167,7 @@ fi
 if test "$found" != yes; then
     cat >&2 <<'EOF'
 ERROR: gbm3 requires a working C++11 OpenMP compiler and shared runtime.
-The actual R build toolchain could not compile, link and run two OpenMP threads.
+The actual R build toolchain could not compile, link and run the OpenMP probe.
 Linux: install GCC/G++, shared libgomp and binutils (plus R development tools).
 macOS: install Xcode Command Line Tools and Homebrew libomp, or configure a
 compatible OpenMP C++ toolchain in R's Makevars. No user configuration is changed.

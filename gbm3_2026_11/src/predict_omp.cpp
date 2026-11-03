@@ -38,10 +38,19 @@
 #include <omp.h>
 
 namespace {
+class FixedTeam {
+ public:
+  FixedTeam() : dynamic_(omp_get_dynamic()) { omp_set_dynamic(0); }
+  ~FixedTeam() { omp_set_dynamic(dynamic_); }
+ private:
+  int dynamic_;
+};
+
 int validated_gbm_team_size(int requested) {
   if (requested == NA_INTEGER || requested < 1)
     Rcpp::stop("requested thread count must be positive");
   int actual = 1;
+  FixedTeam team_policy;
 #pragma omp parallel num_threads(requested)
   {
 #pragma omp single
@@ -187,6 +196,9 @@ Rcpp::NumericVector validated_gbm_predict(
   std::vector<double> result(static_cast<std::size_t>(nr), initF);
   const int workers = std::max(1, std::min(n_threads, nr));
   int actual = 0;
+  {
+  // Restore the caller's policy before any R error or interrupt handling.
+  FixedTeam team_policy;
 #pragma omp parallel num_threads(workers) if(workers > 1)
   {
 #pragma omp single
@@ -220,6 +232,7 @@ Rcpp::NumericVector validated_gbm_predict(
       }
       result[row] = score;  // independent rows; native tree accumulation order
     }
+  }
   }
   if (actual != workers)
     Rcpp::stop("OpenMP created %d threads; requested %d", actual, workers);

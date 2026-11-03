@@ -34,27 +34,14 @@
       }
     }
   }
-  actual <- tryCatch(
-    .Call("gbm_omp_team_size", 2L, PACKAGE = "gbm3"),
-    error = function(e) {
-      fail("gbm3 OpenMP initialization failed: ", conditionMessage(e))
-    }
-  )
-  if (!identical(actual, 2L)) {
-    fail(
-      "gbm3 OpenMP initialization failed: requested 2 threads, got ",
-      actual,
-      ". Check OpenMP runtime/thread limits and restart R."
-    )
-  }
-  invisible(actual)
+  invisible(NULL)
 }
 
 #' Predict Laplace regression with OpenMP
 #'
 #' Predict from a prefix of the raw trees in a gbm3 Laplace regression fit,
-#' parallelizing independent rows with OpenMP. The package checks that a
-#' two-thread OpenMP team can be created when its namespace loads.
+#' parallelizing independent rows with OpenMP. Namespace loading does not
+#' create a thread team; each prediction requests its own team size.
 #'
 #' @param model A gbm3 \code{GBMFit} Laplace regression model with one class,
 #'   a finite scalar \code{initF}, valid trained-variable metadata, and raw
@@ -67,7 +54,9 @@
 #' @param n_threads One positive integer-valued thread count. The prediction
 #'   team uses at most the number of rows (one thread for zero rows). An error
 #'   is raised if the actual prediction team has fewer threads than requested
-#'   after this cap. This does not change the global OpenMP thread setting.
+#'   after this cap. Dynamic team sizing is disabled for this call and restored
+#'   afterward. The default OpenMP thread count is not changed. Hard runtime
+#'   limits such as \code{OMP_THREAD_LIMIT} still apply.
 #'
 #' @details
 #' Predictions sum already-shrunken terminal values in native tree order,
