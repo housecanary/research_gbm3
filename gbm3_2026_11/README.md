@@ -139,18 +139,18 @@ interactions are rejected. Offsets discarded from all model metadata cannot
 be detected: do not pass such models. See `?gbm3::predict_omp` for the full
 contract. Each call validates/copies its inputs; speedup depends on workload.
 
-When this package is a submodule of `research_gbm3`, a plain clone does not
-populate it. Initialize the recorded submodule revision before installation:
+This package is tracked as a regular directory in `research_gbm3`, imported
+with full upstream history using `git subtree`. The pristine upstream base is
+`98edaf5c4f7e369893886a95fa01c31514375f8d` from
+`https://github.com/gbm-developers/gbm3.git`; our changes are committed separately.
+A plain clone includes the package; no submodule initialization is needed:
 
 ```dockerfile
-RUN git clone https://github.com/housecanary/research_gbm3.git /data/gbm3 \
-    && git -C /data/gbm3 submodule update --init gbm3_2026_11
+RUN git clone https://github.com/housecanary/research_gbm3.git /data/gbm3
 RUN R -e "pak::local_install('/data/gbm3/gbm3_2026_11')"
 ```
 
-Publish this branch to a repository you can push to and set the parent's
-`.gitmodules` URL to that repository. Push the submodule commit first, then
-commit/push its updated pointer in the parent. A local submodule branch alone
-does not make these changes available to Docker. For reproducible builds,
-also check out a reviewed parent commit before initializing its submodule.
+Commit and push package edits in `research_gbm3` itself. No separate writable
+upstream repository is required. For reproducible builds, check out a reviewed
+`research_gbm3` commit before installing the package.
 
