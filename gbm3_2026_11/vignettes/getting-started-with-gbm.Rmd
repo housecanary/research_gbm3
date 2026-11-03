@@ -1,0 +1,209 @@
+---
+title: "Getting Started with the gbm3 Package"
+author: "James Hickey"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with the gbm3 package}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+```{r, message=FALSE, echo=FALSE}
+library("gbm3")
+```
+
+The `gbm3` package implements generalized boosted models, gradient tree boosting for a wide variety of statistical models and loss functions, including models commonly used in statistics, such as the Cox model, that are not usually associated with boosting.  When presented with data, the `gbm3` package offers the user the ability to build predictive models and explore the influence of different variables on the response, akin to a data mining or exploration task.
+
+To get started, a user must:
+
+* have a dataset in a `data.frame`;
+* select and create an appropriate distribution object;
+* set the training parameters for the gbm model;
+* set any additional variable and fitting parameters.
+
+Once these steps are complete, a user can fit a `gbm3` model with `gbmt`. They can then evaluate its performance, make predictions, fit additional trees, and plot the relative influence of the predictor variables.
+
+### Example dataset 
+To begin, this vignette will work with simulated data where the response obeys a `Bernoulli` distribution and is determined by 3 predictor variables. Every row of the data corresponds to an individual observation, and random weights are assigned to these observations. These weights determine the importance of each observation in the fit. At this stage it is also assumed that the fit will be made directly to the response and **no offset** is supplied. If a non-zero offset is supplied, it is added to the model's additive predictor; for example, the fitted linear predictor is `offset + f(x)` for distributions with a link-scale predictor. Currently the package supports responses that are numeric, factors (i.e. `Bernoulli`), or survival objects (more specifically, counting-process or right-censored survival objects) in the case of Cox proportional hazards models. **NB:** Predictor variables may have missing data (specified by `NA`) but the responses must have no missing observations.
+
+```{r}
+# create some binomial response data - N observations 
+N <- 1000
+X1 <- runif(N)
+X2 <- runif(N)
+X3 <- factor(sample(letters[1:4],N,replace=T))
+mu <- c(-1,0,1,2)[as.numeric(X3)]
+
+p <- 1/(1+exp(-(sin(3*X1) - 4*X2 + mu)))
+Y <- rbinom(N,1,p) # response
+
+# Normalized weights for each observation
+w <- rexp(N)
+w <- N*w/sum(w)
+
+# Offset is set to 0
+offset <- rep(0, N)
+
+# Collate data
+data <- data.frame(Y=Y,X1=X1,X2=X2,X3=X3)
+```
+
+
+## Creating a gbm distribution object
+The `gbm3` package provides a number of distributions. To view what distributions are currently available simply call `available_distributions()`.
+
+```{r}
+available_distributions()
+```
+
+From the list of available distributions a default `GBMDist` object for each distribution can be created by calling `gbm_dist` and passing the desired distribution's name as follows:
+```{r}
+# Create a default Bernoulli 
+bern_dist <- gbm_dist("Bernoulli")
+```
+Certain distributions have distribution-specific parameters, such as the number of degrees of freedom associated with the distribution. These parameters are passed as arguments to `gbm_dist`. Distribution-specific parameters are described in the "Model Specific Parameters" vignette.
+
+## Setting training parameters
+Once the data have been imported and the distribution object has been created, the next task is to specify the training parameters for the `gbm3` package. These parameters are passed to `gbmt` in a `GBMTrainParams` object, which can be created with the `training_params` constructor. The named parameters in the constructor are as follows:
+
+* `num_trees`: the number of iterations to use in the fitting.
+* `interaction_depth`: the maximum number of splits in each tree. A value of 1 gives an additive model, 2 allows two-way interactions, and so on. Larger values can increase overfitting; values between 1 and 5 are usually sufficient for most applications.
+* `min_num_obs_in_node`: the minimum number of observations that a node must have to be considered when fitting a tree. The default of 10 observations is usually adequate, but it can be reduced for small datasets.
+* `shrinkage`: the learning rate applied to each tree. Smaller values generally improve predictive performance, but they may require more trees to achieve a given performance. In practice the default of `0.001` usually suffices.
+* `bag_fraction`: the fraction of the training observations randomly sub-sampled to fit a tree in each iteration.  This has the effect of reducing the variance of the boosted model.  The default `bag_fraction=0.5` is recommended.
+* `num_train`: the number of observations to be used in training the model.  This defaults to the minimum value such that the terminal nodes of a fitted tree can be created.
+* `id`: a sequence of integers specifying the id of each observation in the data.  This defaults to `seq_len(num_train)`.
+* `num_features`: the number of features randomly selected, on each iteration, from the data when growing a tree. 
+
+Once the parameters have been chosen, the appropriate object can be created. For more details on these parameters and what they represent, see *The Elements of Statistical Learning* by Friedman et al.
+
+```{r}
+# Creating an appropriate training parameters object
+train_params <- training_params(num_trees = 2000, interaction_depth = 3, 
+                                num_train=nrow(data), num_features = 3)
+```
+
+## Additional variable and fitting parameters
+Before fitting our boosted model there are some other parameters to consider. The monotonic relationship of each predictor with the outcome can be specified through the `var_monotone` parameter. In this case the relationship is assumed to be arbitrary and the parameter is unspecified.  The names of the predictor variables may also be specified via `var_names`.
+
+### Cross Validation
+Cross-validation parameters may also be provided. The number of folds is set by `cv_folds`; by default no cross-validation is done by `gbmt`. An optional vector specifying the fold for each observation can be supplied through `fold_id`. If the distribution is `Bernoulli`, cross-validation can be stratified by the response.
+
+### Parallelisation
+The core algorithm can be parallelized across multiple threads by passing the output of `gbmParallel()` to `par_details`. This example does not require more than one processing thread, so it uses the default.
+
+```{r}
+# Example of a gbmParallel with more threads
+par_detail <- gbmParallel(num_threads = 2) # Pass to par_details in gbmt
+```
+
+## Putting it all together
+With the data defined, the distribution object created, the training parameters and additional parameters specified, it is now time to fit the model.  This is done by passing these objects to `gbmt` along with the model formula.  
+
+```{r, message=FALSE}
+# Create a gbm fit
+fit <- gbmt(Y ~ X1 + X2 + X3, distribution=bern_dist, data=data, weights = w, 
+            offset=offset, train_params = train_params,
+            cv_folds=5, keep_gbm_data=TRUE)
+```
+
+The `keep_gbm_data` flag indicates that the returned `GBMFit` object will contain the data passed to the fit within a `GBMData` object.
+
+### Default behaviour
+The process outlined above is slightly cumbersome. Thankfully, `gbmt` provides useful defaults. If `distribution` is not supplied, it is guessed: currently `gbmt` can identify Bernoulli and Cox models, and otherwise defaults to Gaussian. `weights` defaults to uniform weights across all data rows, and `offset` defaults to 0 for all data rows. The default training parameters specify 2000 trees, an interaction depth of 3, one row per observation, half of the available observations for training, half of the training observations bagged for each tree, and all predictors available for fitting. Moreover, the weights are normalized by the routine unless the distribution is `Pairwise`.
+
+```{r, message=FALSE}
+# A default fit to gaussian data
+# Create data
+N <- 1000
+X1 <- runif(N)
+X2 <- 2*runif(N)
+X3 <- factor(sample(letters[1:4],N,replace=T))
+X4 <- ordered(sample(letters[1:6],N,replace=T))
+X5 <- factor(sample(letters[1:3],N,replace=T))
+X6 <- 3*runif(N)
+mu <- c(-1,0,1,2)[as.numeric(X3)]
+
+SNR <- 10 # signal-to-noise ratio
+Y <- X1**1.5 + 2 * (X2**.5) + mu
+sigma <- sqrt(var(Y)/SNR)
+Y <- Y + rnorm(N,0,sigma)
+
+# create a bunch of missing values
+X1[sample(1:N,size=100)] <- NA
+X3[sample(1:N,size=300)] <- NA
+
+# Gaussian data
+gauss_data <- data.frame(Y=Y,X1=X1,X2=X2,X3=X3,X4=X4,X5=X5,X6=X6)
+
+# Perform a cross-validated fit
+gauss_fit <- gbmt(Y ~ X1 + X2 + X3 + X4 + X5 + X6, 
+                  data=gauss_data, cv_folds =5, keep_gbm_data = TRUE)
+```
+
+## Identifying the optimal iteration
+A fitted model contains several performance measures that can be used to identify the optimal iteration. The package offers three methods: `'test'`, `'cv'`, and `'OOB'`. The `'test'` method uses performance on a held-out test set and is available only when fewer observations are used to fit the model than are present in the original data. The `'cv'` method uses the cross-validation error, and `'OOB'` uses the out-of-bag error estimate. The `'OOB'` method is available only if `bag_fraction > 0`, and it tends to underestimate the optimal number of iterations. The optimal iteration, along with a performance plot, can be obtained through `gbmt_performance`. In these plots the cross-validation error, test-set error, and out-of-bag improvement are represented by green, red, and blue lines, respectively. The training-set error is shown as a black line, and the optimal iteration is marked with a dashed blue line.
+
+```{r, message=FALSE}
+# Use gaussian fit and determine the performance
+# red line is testing error
+# green line is cv error
+# blue line is OOB error
+best_iter_test <- gbmt_performance(gauss_fit, method='test')
+best_iter_cv <- gbmt_performance(gauss_fit, method='cv')
+best_iter_oob <- gbmt_performance(gauss_fit, method='OOB')
+```
+
+## Fitting additional trees
+After evaluating performance, the optimal number of iterations may be equal to the `num_trees` value used in the fit. In that case, additional trees may be fitted to the original dataset. This does not alter the cross-validation fit, but it does update the test-set and OOB errors.
+
+```{r, message=FALSE}
+# Fit additional trees to gaussian fit and recalculate optimal number of iterations
+gauss_fit_more <- gbm_more(gauss_fit, num_new_trees = 5000) # This is a large number of 
+                                                            #extra trees!
+best_iter_test_more <- gbmt_performance(gauss_fit_more, method='test')
+```
+
+## Predictions on other data
+With the model fitted and the optimal number of iterations determined, predictions can be made on new datasets with `predict`.
+
+```{r, message=FALSE}
+# Given additional data - of the same shape as our gaussian example
+X1 <- runif(N)
+X2 <- 2*runif(N)
+X3 <- factor(sample(letters[1:4],N,replace=TRUE))
+X4 <- ordered(sample(letters[1:6],N,replace=TRUE))
+X5 <- factor(sample(letters[1:3],N,replace=TRUE))
+X6 <- 3*runif(N)
+mu <- c(-1,0,1,2)[as.numeric(X3)]
+
+Y <- X1**1.5 + 2 * (X2**.5) + mu
+Y <- Y + rnorm(N,0,sigma)
+
+data2 <- data.frame(Y=Y,X1=X1,X2=X2,X3=X3,X4=X4,X5=X5,X6=X6)
+
+# Then predictions can be made
+preds <- predict(gauss_fit_more, newdata=data2, n.trees=best_iter_test_more)
+```
+
+## Relative influence of predictors
+`gbm3` also provides a measure of the relative influence of each predictor in the fitted model. The influence of a variable $x_j$ is determined by summing, across all trees, the improvements from splits on that variable.
+
+```{r}
+# Relative influence of predictors - both examples
+print(relative_influence(gauss_fit_more, best_iter_test_more))
+print(relative_influence(fit, gbmt_performance(fit, method='cv')))
+```
+
+## Plotting the marginal effects of selected variables
+In addition to relative influence, `gbm3` can calculate fitted values over selected predictors and create marginal plots with `plot`.
+
+```{r}
+# Examine the marginal effects of the first two variables - gaussian example
+# Shows the fitted model predictions as a function of 1st two predictors
+# with all the others integrated out
+plot(gauss_fit_more, var_index = 1:2)
+```
+
+## Additional useful functions
+Finally, the `gbm3` package includes several additional utility functions. A `GBMFit` object can be summarized and printed with `summary` and `print`, respectively. Individual fitted trees can be inspected with `pretty_gbm_tree`, and the loss for a given distribution can be calculated with the `loss` S3 method, a `GBMDist` object, and the appropriate data.
