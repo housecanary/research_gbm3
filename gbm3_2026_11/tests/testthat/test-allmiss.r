@@ -29,16 +29,16 @@ test_that("x longer than y", {
 test_that("Excessive levels in x", {
   
   testExcess <- data.frame(
-    y = sample(c(0,1), 1025, replace = TRUE)
-    ,x1 = runif(1025)
-    ,x2 = factor(1:1025)
+    y = sample(c(0,1), 15361, replace = TRUE)
+    ,x1 = runif(15361)
+    ,x2 = factor(1:15361)
   )
   
   expect_error(
     gbmt_fit(x = testExcess[,c('x1', 'x2')]
             , y = testExcess$y
             , distribution = gbm_dist("Bernoulli"), train_params=training_params(num_trees = 2))
-    ,'gbm does not currently handle categorical variables with more than 1024 levels\\. Variable 2\\: x2 has 1025 levels\\.')
+    ,'gbm does not currently handle categorical variables with more than 15360 levels\\. Variable 2\\: x2 has 15361 levels\\.')
   
 })
 
@@ -89,16 +89,16 @@ test_that("x longer than y", {
 test_that("Excessive levels in x", {
   
   testExcess <- data.frame(
-    y = sample(c(0,1), 1025, replace = TRUE)
-    ,x1 = runif(1025)
-    ,x2 = factor(1:1025)
+    y = sample(c(0,1), 15361, replace = TRUE)
+    ,x1 = runif(15361)
+    ,x2 = factor(1:15361)
   )
   
   expect_error(
     gbm.fit(x = testExcess[,c('x1', 'x2')]
             , y = testExcess$y
             , distribution = 'Bernoulli', n.trees = 2)
-    ,'gbm does not currently handle categorical variables with more than 1024 levels\\. Variable 2\\: x2 has 1025 levels\\.')
+    ,'gbm does not currently handle categorical variables with more than 15360 levels\\. Variable 2\\: x2 has 15361 levels\\.')
 
 })
 

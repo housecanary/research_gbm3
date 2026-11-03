@@ -240,15 +240,15 @@ test_that("convertY does nothing to factors with levels != 2", {
 test_that("check_var_type throws error when passed excessive levels in x", {
   
   testExcess <- data.frame(
-    y = sample(c(0,1), 1025, replace = TRUE)
-    ,x1 = runif(1025)
-    ,x2 = factor(1:1025)
+    y = sample(c(0,1), 15361, replace = TRUE)
+    ,x1 = runif(15361)
+    ,x2 = factor(1:15361)
   )
   
   expect_error(
     check_var_type(x = testExcess[,c('x1', 'x2')]
              , y = testExcess$y)
-    ,'gbm does not currently handle categorical variables with more than 1024 levels\\. Variable 2\\: x2 has 1025 levels\\.')
+    ,'gbm does not currently handle categorical variables with more than 15360 levels\\. Variable 2\\: x2 has 15361 levels\\.')
   
 })
 
