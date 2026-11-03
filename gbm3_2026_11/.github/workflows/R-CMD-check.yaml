@@ -2,7 +2,7 @@
 # Need help debugging build failures? Start at https://github.com/r-lib/actions#where-to-find-help
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, omp_parallel_predict]
   pull_request:
 
 name: R-CMD-check.yaml
@@ -43,6 +43,10 @@ jobs:
         with:
           extra-packages: any::rcmdcheck
           needs: check
+
+      - name: Install shared OpenMP runtime on macOS
+        if: runner.os == 'macOS'
+        run: brew list libomp >/dev/null 2>&1 || brew install libomp
 
       - uses: r-lib/actions/check-r-package@v2
         with:

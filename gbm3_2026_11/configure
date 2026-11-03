@@ -1,0 +1,186 @@
+#!/bin/sh
+# Probe through R CMD SHLIB, not an independently guessed compiler command.
+# This honours R_MAKEVARS_USER, R_MAKEVARS_SITE, CXX11 and the R linker flags.
+set -eu
+
+if test -z "${R_HOME:-}"; then
+    R_HOME=$(R RHOME)
+fi
+R="${R_HOME}/bin/R"
+srcdir=$(pwd)
+work=$(mktemp -d "${srcdir}/.gbm3-openmp.XXXXXX")
+trap 'rm -rf "$work"' 0
+trap 'exit 1' 1 2 3 15
+
+# GCC on Darwin does not necessarily pass an SDK sysroot to Apple's linker.
+# Use the active Command Line Tools/Xcode SDK for both phases, package-locally.
+# Do not export SDKROOT or change deployment targets or user Makevars.
+sdk_cppflags=""
+sdk_libs=""
+if test "$(uname -s)" = Darwin; then
+    printf 'macOS environment: SDKROOT=%s; MACOSX_DEPLOYMENT_TARGET=%s\n' \
+        "${SDKROOT:-<unset>}" "${MACOSX_DEPLOYMENT_TARGET:-<unset>}"
+    sdk=$(/usr/bin/xcrun --sdk macosx --show-sdk-path 2>/dev/null || :)
+    if test -z "$sdk" || test ! -d "$sdk/usr/include" || \
+        test ! -d "$sdk/usr/lib"; then
+        echo 'ERROR: cannot discover a usable macOS SDK with xcrun --sdk macosx --show-sdk-path.' >&2
+        echo 'Install/select Xcode Command Line Tools; no compiler or user configuration was changed.' >&2
+        exit 1
+    fi
+    printf 'using package-local macOS SDK: %s\n' "$sdk"
+    sdk_cppflags="-isysroot \"$sdk\""
+    sdk_libs="-isysroot \"$sdk\" -Wl,-syslibroot,\"$sdk\""
+fi
+
+cat > "$work/conftest.cpp" <<'EOF'
+#ifndef _OPENMP
+#error "gbm3 requires OpenMP compilation (_OPENMP is not defined)"
+#endif
+#include <omp.h>
+#include <string>
+#include <cstdio>
+#include <R.h>
+#include <vector>
+
+// Exercise the unsigned loops, firstprivate objects and member expressions
+// used by the existing fitting code, as well as the prediction runtime API.
+struct Probe {
+    int threads() const { return 2; }
+    int chunk() const { return 1; }
+    int run() const {
+        int team = 0;
+        int sum = 0;
+        std::vector<int> values(2, 1);
+        #pragma omp parallel firstprivate(values) num_threads(threads())
+        {
+            #pragma omp single
+            team = omp_get_num_threads();
+            #pragma omp for schedule(static, chunk()) reduction(+:sum)
+            for (unsigned long i = 0; i < 2; ++i) sum += values[i];
+        }
+        return sum == 2 ? team : 0;
+    }
+};
+extern "C" void gbm3_openmp_probe(int *team) { *team = Probe().run(); }
+EOF
+
+write_makevars() {
+    # Escape sed replacement metacharacters; keep make variable references.
+    cxx=$(printf '%s' "$1" | sed 's/[\\&|]/\\&/g')
+    libs=$(printf '%s' "$2" | sed 's/[\\&|]/\\&/g')
+    sdk_cpp=$(printf '%s' "$sdk_cppflags" | sed 's/[\\&|]/\\&/g')
+    sdk_link=$(printf '%s' "$sdk_libs" | sed 's/[\\&|]/\\&/g')
+    sed -e "s|@OPENMP_CXXFLAGS@|$cxx|g" \
+        -e "s|@OPENMP_LIBS@|$libs|g" \
+        -e "s|@SDK_CPPFLAGS@|$sdk_cpp|g" \
+        -e "s|@SDK_LIBS@|$sdk_link|g" \
+        "$srcdir/src/Makevars.in" > "$work/Makevars"
+    # R CMD SHLIB uses Makevars.win on Windows.
+    cp "$work/Makevars" "$work/Makevars.win"
+}
+
+shared_runtime() {
+    case $(uname -s) in
+        Darwin)
+            otool -L "$work/conftest.so" > "$work/runtime.log" 2>&1 &&
+                grep -E 'lib(gomp|omp|iomp5)[.].*dylib' "$work/runtime.log" >/dev/null
+            ;;
+        Linux)
+            # binutils is part of the supported Linux build prerequisites.
+            objdump -p "$work/conftest.so" > "$work/runtime.log" 2>&1 &&
+                grep -E 'NEEDED.*lib(gomp|omp|iomp5)[.]so' "$work/runtime.log" >/dev/null
+            ;;
+        *) return 0 ;;
+    esac
+}
+
+probe() {
+    label=$1
+    write_makevars "$2" "$3"
+    rm -f "$work/conftest.o" "$work/conftest.so" "$work/conftest.dll" \
+        "$work/runtime.log" "$work/run.log"
+    printf 'checking OpenMP with %s ... ' "$label"
+    if (cd "$work" && "$R" CMD SHLIB conftest.cpp) > "$work/build.log" 2>&1; then
+        if shared_runtime; then
+            if (cd "$work" && "$R" --vanilla --slave -e \
+                'ext <- .Platform$dynlib.ext; dyn.load(paste0("conftest", ext)); team <- .C("gbm3_openmp_probe", team = integer(1))$team; if (team != 2L) stop("OpenMP could not create a two-thread team (got ", team, ")")') \
+                > "$work/run.log" 2>&1; then
+                printf 'yes (shared runtime, two threads)\n'
+                return 0
+            fi
+        fi
+    fi
+    printf 'no\n'
+    cat "$work/build.log" >&2
+    test ! -f "$work/runtime.log" || cat "$work/runtime.log" >&2
+    test ! -f "$work/run.log" || cat "$work/run.log" >&2
+    return 1
+}
+
+# Identify the compiler through the same R/site/user Makevars, not R CMD
+# config (which need not reflect user overrides), executable names or PATH.
+# This check uses no OpenMP headers or Apple-clang-only flags.
+apple_clang_toolchain() {
+    cat > "$work/compiler-id.cpp" <<'EOF'
+#if !defined(__clang__) || !defined(__apple_build_version__)
+#error "Homebrew libomp fallback is only supported with configured Apple clang"
+#endif
+extern "C" void gbm3_compiler_id() {}
+EOF
+    write_makevars '' ''
+    if (cd "$work" && "$R" CMD SHLIB compiler-id.cpp) > "$work/compiler-id.log" 2>&1; then
+        return 0
+    fi
+    echo 'Skipping Apple clang/libomp fallback: configured toolchain is not usable Apple clang.' >&2
+    cat "$work/compiler-id.log" >&2
+    return 1
+}
+
+found=no
+if probe 'R toolchain flags' '$(SHLIB_OPENMP_CXXFLAGS)' '$(SHLIB_OPENMP_CXXFLAGS)'; then
+    found=yes
+elif probe '-fopenmp with the configured C++ compiler' '-fopenmp' '-fopenmp'; then
+    found=yes
+elif test "$(uname -s)" = Darwin && apple_clang_toolchain; then
+    # Prefer an already configured working toolchain above. For Apple clang,
+    # link the shared Homebrew runtime explicitly, never libomp.a.
+    prefixes=""
+    if command -v brew >/dev/null 2>&1; then
+        prefixes=$(brew --prefix libomp 2>/dev/null || :)
+    fi
+    # Also support libomp when brew itself is not on the install process PATH.
+    seen="|"
+    for prefix in "$prefixes" /opt/homebrew/opt/libomp /usr/local/opt/libomp; do
+        case "$seen" in *"|$prefix|"*) continue ;; esac
+        seen="${seen}${prefix}|"
+        if test -f "$prefix/include/omp.h" && test -f "$prefix/lib/libomp.dylib"; then
+            if probe "shared libomp at $prefix" \
+                "-Xpreprocessor -fopenmp -I\"$prefix/include\"" \
+                "\"$prefix/lib/libomp.dylib\""; then
+                found=yes
+                break
+            fi
+        fi
+    done
+fi
+
+if test "$found" != yes; then
+    cat >&2 <<'EOF'
+ERROR: gbm3 requires a working C++11 OpenMP compiler and shared runtime.
+The actual R build toolchain could not compile, link and run two OpenMP threads.
+Linux: install GCC/G++, shared libgomp and binutils (plus R development tools).
+macOS: install Xcode Command Line Tools and Homebrew libomp, or configure a
+compatible OpenMP C++ toolchain in R's Makevars. No user configuration is changed.
+Check R_MAKEVARS_USER / R_MAKEVARS_SITE, compiler/linker flags, architecture,
+SDKROOT, MACOSX_DEPLOYMENT_TARGET, runtime paths, OMP_DYNAMIC and OMP_THREAD_LIMIT.
+Apple clang/libomp flags are never substituted for GCC. Static libomp is not supported.
+See README.md, "Building with OpenMP". The failed probe output is printed above.
+EOF
+    exit 1
+fi
+
+case $(uname -s) in
+    MINGW*|MSYS*|CYGWIN*) cp "$work/Makevars.win" "$srcdir/src/Makevars.win" ;;
+    *) cp "$work/Makevars" "$srcdir/src/Makevars" ;;
+esac
+printf 'OpenMP configuration complete.\n'

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Rtools supplies sh and an OpenMP-capable GCC toolchain.
+exec sh ./configure "$@"

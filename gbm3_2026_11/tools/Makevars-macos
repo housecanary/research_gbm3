@@ -1,0 +1,19 @@
+# Optional per-install override for incompatible user-configured GCC toolchains.
+CC = /usr/bin/clang
+CXX11 = /usr/bin/clang++
+CXX11FLAGS = -O2
+SHLIB_OPENMP_CXXFLAGS =
+
+# Resolve Homebrew's compiler from PATH, then ask it for its runtime libraries.
+GBM3_GFORTRAN := $(shell command -v gfortran 2>/dev/null || { prefix=$$(brew --prefix gcc 2>/dev/null) && test -x "$$prefix/bin/gfortran" && printf '%s' "$$prefix/bin/gfortran"; })
+ifeq ($(strip $(GBM3_GFORTRAN)),)
+$(error gfortran not found; install Homebrew gcc and put its bin directory on PATH)
+endif
+GBM3_LIBGFORTRAN := $(shell "$(GBM3_GFORTRAN)" -print-file-name=libgfortran.dylib)
+GBM3_LIBQUADMATH := $(shell "$(GBM3_GFORTRAN)" -print-file-name=libquadmath.dylib)
+ifeq ($(shell test -f "$(GBM3_LIBGFORTRAN)" && test -f "$(GBM3_LIBQUADMATH)" && echo yes),)
+$(error gfortran could not locate libgfortran.dylib and libquadmath.dylib; check the Homebrew gcc installation)
+endif
+FC = "$(GBM3_GFORTRAN)"
+F77 = "$(GBM3_GFORTRAN)"
+FLIBS = "$(GBM3_LIBGFORTRAN)" "$(GBM3_LIBQUADMATH)"

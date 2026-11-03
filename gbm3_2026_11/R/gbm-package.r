@@ -13,6 +13,7 @@ NULL
 
 ## on package load set default options
 .onLoad <- function(libname, pkgname) {
+    .initialize_gbm_predictor()
     already.set <- options()
 
     if (!('gbm.parallel' %in% names(already.set))) {

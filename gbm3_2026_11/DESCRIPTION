@@ -31,6 +31,7 @@ Imports:
     Rcpp (>= 1.0.0)
 Suggests:
     testthat (>= 3.1.0),
+    withr,
     knitr,
     rmarkdown,
     MASS
@@ -48,4 +49,6 @@ URL: https://gbm-developers.github.io/gbm3/,
     https://github.com/gbm-developers/gbm3
 Encoding: UTF-8
 LinkingTo: Rcpp
+SystemRequirements: C++11, OpenMP with a shared runtime (GCC/libgomp or
+    Clang/libomp); GNU make; binutils on Linux
 RoxygenNote: 8.0.0

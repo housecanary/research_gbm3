@@ -3,6 +3,15 @@ url: https://gbm-developers.github.io/gbm3/
 template:
   bootstrap: 5
 
+reference:
+  - title: Parallel prediction
+    contents:
+      - predict_omp
+  - title: Package reference
+    contents:
+      - matches(".")
+      - -predict_omp
+
 navbar:
   structure:
     left: [intro, reference, articles, news]

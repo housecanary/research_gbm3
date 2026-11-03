@@ -6,6 +6,9 @@
 src/*.o
 src/*.so
 src/*.dll
+src/Makevars
+src/Makevars.win
+.gbm3-openmp.*/
 src/external
 src/tests
 src/searcher.h
